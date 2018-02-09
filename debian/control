@@ -5,6 +5,7 @@ Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
 XSBC-Original-Maintainer: Bhushan Shah <bshah@kde.org>
 Build-Depends: debhelper (>= 9),
                libgstreamer-plugins-base1.0-dev,
+               nemo-gstreamer1.0-interfaces-dev,
                pkg-config,
                pkg-kde-tools (>= 0.9),
                qt5-default,
