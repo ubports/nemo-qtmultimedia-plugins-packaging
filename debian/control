@@ -1,0 +1,25 @@
+Source: nemo-qtmultimedia-plugins
+Section: kde
+Priority: extra
+Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
+XSBC-Original-Maintainer: Bhushan Shah <bshah@kde.org>
+Build-Depends: debhelper (>= 9),
+               libgstreamer-plugins-base1.0-dev,
+               pkg-config,
+               pkg-kde-tools (>= 0.9),
+               qt5-default,
+               qtbase5-dev (>= 5.2),
+               qtbase5-private-dev,
+               qtdeclarative5-dev,
+               qtmultimedia5-dev,
+               qtmultimedia5-private-dev
+Standards-Version: 3.9.6
+Homepage: https://git.merproject.org/mer-core/nemo-qtmultimedia-plugins/
+Vcs-Browser: https://git.merproject.org/mer-core/nemo-qtmultimedia-plugins/
+Vcs-Git: https://git.merproject.org/mer-core/nemo-qtmultimedia-plugins/
+
+Package: nemo-qtmultimedia-plugins
+Architecture: armhf
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: Nemo QtMultimedia plugins
+ Nemo QtMultimedia plugins provide a videotexture backend used by camera
