@@ -1,0 +1,33 @@
+From 6ad5bed8405b4519a18a136095383ee7d8e6db5a Mon Sep 17 00:00:00 2001
+From: Bhushan Shah <bhush94@gmail.com>
+Date: Mon, 5 Mar 2018 14:52:52 +0530
+Subject: [PATCH] Link to multimediagsttools for qt 5.10
+
+---
+ src/videotexturebackend/videotexturebackend.pro | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/videotexturebackend/videotexturebackend.pro b/src/videotexturebackend/videotexturebackend.pro
+index 6803c26..06138ce 100644
+--- a/src/videotexturebackend/videotexturebackend.pro
++++ b/src/videotexturebackend/videotexturebackend.pro
+@@ -6,6 +6,7 @@ QT += \
+         gui-private \
+         quick \
+         multimedia \
++        multimediagsttools \
+         multimedia-private \
+         qtmultimediaquicktools-private
+ 
+@@ -16,7 +17,7 @@ PKGCONFIG +=\
+         gstreamer-1.0 \
+         nemo-gstreamer-interfaces-1.0
+ 
+-LIBS += -lqgsttools_p
++# LIBS += -lqgsttools_p
+ 
+ # It won't compile without this,
+ # the issue is Xlib.h defines Bool as int but  QJsonValue.h has an enum with Bool = 0x1 --> int = 0x1 -> BOOM!
+-- 
+2.16.2
+
