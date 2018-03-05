@@ -1,4 +1,4 @@
-From 6ad5bed8405b4519a18a136095383ee7d8e6db5a Mon Sep 17 00:00:00 2001
+From ab99c9cc4ade6843ab73b346192dd16eb27bc3f0 Mon Sep 17 00:00:00 2001
 From: Bhushan Shah <bhush94@gmail.com>
 Date: Mon, 5 Mar 2018 14:52:52 +0530
 Subject: [PATCH] Link to multimediagsttools for qt 5.10
@@ -8,14 +8,14 @@ Subject: [PATCH] Link to multimediagsttools for qt 5.10
  1 file changed, 2 insertions(+), 1 deletion(-)
 
 diff --git a/src/videotexturebackend/videotexturebackend.pro b/src/videotexturebackend/videotexturebackend.pro
-index 6803c26..06138ce 100644
+index 6803c26..5d2f08d 100644
 --- a/src/videotexturebackend/videotexturebackend.pro
 +++ b/src/videotexturebackend/videotexturebackend.pro
 @@ -6,6 +6,7 @@ QT += \
          gui-private \
          quick \
          multimedia \
-+        multimediagsttools \
++        multimediagsttools-private \
          multimedia-private \
          qtmultimediaquicktools-private
  
