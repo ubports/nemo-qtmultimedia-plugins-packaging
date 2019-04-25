@@ -1,5 +1,5 @@
-nemo-qtmultimedia-plugins (0.1) xenial; urgency=medium
+nemo-qtmultimedia-plugins (0.0.10-1) UNRELEASED; urgency=medium
 
   * Initial release.
 
- -- Bhushan Shah <bshah@kde.org>  Fri, 09 Feb 2018 07:18:43 +0000
+ -- Jonah Brüchert <jbb@kaidan.im>  Thu, 25 Apr 2019 13:27:08 +0200
