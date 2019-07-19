@@ -1,6 +1,6 @@
 Source: nemo-qtmultimedia-plugins
 Section: kde
-Priority: extra
+Priority: optional
 Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
 XSBC-Original-Maintainer: Bhushan Shah <bshah@kde.org>
 Build-Depends: debhelper (>= 9),
