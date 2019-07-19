@@ -4,11 +4,9 @@
 #export DH_VERBOSE=1
 
 export LDFLAGS += -Wl,--as-needed
+export QT_SELECT=qt5
 
 %:
-	dh $@ --parallel --with sodeps
-
-override_dh_auto_configure:
-	qmake -makefile
+	dh $@ --with sodeps
 
 .PHONY: override_dh_auto_test

@@ -9,19 +9,19 @@ Build-Depends: debhelper (>= 9),
                nemo-gstreamer1.0-interfaces-dev,
                pkg-config,
                pkg-kde-tools (>= 0.9),
-               qt5-default,
+               qt5-qmake,
                qtbase5-dev (>= 5.2),
                qtbase5-private-dev,
                qtdeclarative5-dev,
                qtmultimedia5-dev,
                qtmultimedia5-private-dev
-Standards-Version: 3.9.6
+Standards-Version: 4.3.0
 Homepage: https://git.merproject.org/mer-core/nemo-qtmultimedia-plugins/
 Vcs-Browser: https://git.merproject.org/mer-core/nemo-qtmultimedia-plugins/
 Vcs-Git: https://git.merproject.org/mer-core/nemo-qtmultimedia-plugins/
 
 Package: nemo-qtmultimedia-plugins
-Architecture: armhf
+Architecture: any
 Depends: ${misc:Depends}, ${shlibs:Depends}
 Description: Nemo QtMultimedia plugins
  Nemo QtMultimedia plugins provide a videotexture backend used by camera

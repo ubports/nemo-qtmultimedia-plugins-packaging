@@ -1,0 +1,186 @@
+From 98c1e0d2c232622d5775d09713590c18aa193c2d Mon Sep 17 00:00:00 2001
+From: Alexey Minnekhanov <a.minnekhanov@omprussia.ru>
+Date: Thu, 11 Oct 2018 16:23:17 +0300
+Subject: [PATCH 2/2] Try to call video filters without holding mutex
+
+---
+ .../texturevideobuffer.cpp                    |   7 -
+ .../videotexturebackend.cpp                   | 120 ++++++++++--------
+ 2 files changed, 69 insertions(+), 58 deletions(-)
+
+--- a/src/videotexturebackend/texturevideobuffer.cpp
++++ b/src/videotexturebackend/texturevideobuffer.cpp
+@@ -100,13 +100,6 @@
+         if (bytesPerLine)
+             *bytesPerLine = m_image.bytesPerLine();
+ 
+-        //qWarning() << "TextureVideoBuffer::map(): created internal QImage, \n"
+-        //              "    byteCount: " << m_image.byteCount() << "\n"
+-        //              "    bytesPerLine: " << m_image.bytesPerLine() << "\n"
+-        //              "    metrics: " << m_image.width() << " x " <<
+-        //              m_image.height() << " @ " << m_image.depth() << " BPP\n"
+-        //              "    format: " << m_image.format();
+-
+         return m_image.bits();
+     }
+     return nullptr;
+--- a/src/videotexturebackend/videotexturebackend.cpp
++++ b/src/videotexturebackend/videotexturebackend.cpp
+@@ -67,51 +67,6 @@
+     QVideoFilterRunnable *runnable = nullptr;
+ };
+ 
+-static void call_video_filters(QVector<FilterInfo> *filters,
+-                               TextureVideoBuffer *videoBuffer,
+-                               const QSize &frameSize)
+-{
+-    // create video frame and its format descriptor: construct
+-    //   video frame from video buffer
+-    QVideoFrame vframe(videoBuffer, frameSize, QVideoFrame::Format_BGRA32);
+-    QVideoSurfaceFormat surfaceFormat(frameSize, vframe.pixelFormat(),
+-                                      videoBuffer->handleType());
+-
+-    bool frameWasFiltered = false;
+-    // pass frame to each filter
+-    for (int i = 0; i < filters->size(); ++i) {
+-        FilterInfo &finfo = (*filters)[i];
+-        if (!finfo.filter) {
+-            continue;
+-        }
+-        if (!finfo.runnable) {
+-            finfo.runnable = finfo.filter->createFilterRunnable();
+-        }
+-        if (!finfo.runnable) {
+-            continue;
+-        }
+-
+-        QVideoFilterRunnable::RunFlags runFlag = 0;
+-        // the only flag we can set for runnable is a marker
+-        //    that this filter is a last filter in chain
+-        if (i == filters->size() - 1) {
+-            runFlag |= QVideoFilterRunnable::LastInChain;
+-        }
+-
+-        // actually call filter runnable here
+-        QVideoFrame newFrame = finfo.runnable->run(&vframe, surfaceFormat, runFlag);
+-        if (newFrame != vframe) {
+-            frameWasFiltered = true;
+-            vframe = newFrame;
+-        }
+-    }
+-
+-    // TODO: if frame data has changed, write it back to video buffer.
+-    if (frameWasFiltered) {
+-        qWarning() << "call_video_filters(): filters have changed a frame!";
+-        qWarning() << "  But we don't support changing video frames in filter now.";
+-    }
+-}
+ 
+ class GStreamerVideoTexture : public QSGDynamicTexture
+ {
+@@ -141,6 +96,10 @@
+ public slots:
+     void releaseTexture();
+ 
++protected:
++    void createVideoFilterRunnables();
++    void callVideoFilterRunnables();
++
+ private:
+     GstElement *m_sink;
+     EGLDisplay m_display;
+@@ -326,10 +285,9 @@
+     // render video frame into a framebuffer to be able to get its pixels;
+     // if no filters, don't do this, it affects performance.
+     {
+-        // hold mutex lock on m_filters vector during all processing
+-        QMutexLocker guard(&m_filtersMutex);
+-
+-        if (!m_filters.isEmpty()) {
++        // hold mutex lock on m_filters vector during processing
++        m_filtersMutex.lock();
++        if (!m_filters.isEmpty()) { // for example, QVector::isEmpty() requires mutex to be held
+             if (!m_videoBuffer) {
+                 // create only once
+                 m_videoBuffer = new TextureVideoBuffer();
+@@ -337,8 +295,14 @@
+             // update texture size and ID for every frame
+             m_videoBuffer->setTextureSize(m_textureSize);
+             m_videoBuffer->setTextureId(m_textureId);
+-            m_videoBuffer->updateFrame();
+-            call_video_filters(&m_filters, m_videoBuffer, m_textureSize);
++            m_videoBuffer->updateFrame();  // renders frame image to FBO
++
++            // release mutex before calling runnables?
++            m_filtersMutex.unlock();
++            callVideoFilterRunnables();
++        } else {
++            // unlock quickly if no filters
++            m_filtersMutex.unlock();
+         }
+     }
+ 
+@@ -398,9 +362,63 @@
+ {
+     QMutexLocker guard(&m_filtersMutex);
+     m_filters.swap(filters);
++    createVideoFilterRunnables();
+     return filters;
+ }
+ 
++void GStreamerVideoTexture::createVideoFilterRunnables()
++{
++    // intended to be called when m_filtersMutex is locked
++    for (FilterInfo &finfo: m_filters) {
++        if (Q_UNLIKELY(!finfo.filter)) {
++            continue;
++        }
++        if (!finfo.runnable) {
++            finfo.runnable = finfo.filter->createFilterRunnable();
++        }
++    }
++}
++
++void GStreamerVideoTexture::callVideoFilterRunnables()
++{
++    // intended to be called when m_filtersMutex is unlocked
++
++    // create video frame and its format descriptor: construct
++    //   video frame from video buffer
++    QVideoFrame vframe(m_videoBuffer, m_textureSize, QVideoFrame::Format_BGRA32);
++    QVideoSurfaceFormat surfaceFormat(m_textureSize, vframe.pixelFormat(),
++                                      m_videoBuffer->handleType());
++
++    bool frameWasFiltered = false;
++    // pass frame to each filter
++    for (int i = 0; i < m_filters.size(); ++i) {
++        const FilterInfo &finfo = m_filters.at(i);
++        if (Q_UNLIKELY(!finfo.runnable)) {
++            continue;
++        }
++
++        QVideoFilterRunnable::RunFlags runFlag = 0;
++        // the only flag we can set for QVideoFilterRunnable is a marker
++        //    that this filter is a last filter in chain
++        if (i == m_filters.size() - 1) {
++            runFlag |= QVideoFilterRunnable::LastInChain;
++        }
++
++        // actually call filter runnable here
++        QVideoFrame newFrame = finfo.runnable->run(&vframe, surfaceFormat, runFlag);
++        if (newFrame != vframe) {
++            frameWasFiltered = true;
++            vframe = newFrame;
++        }
++    }
++
++    // TODO: if frame data has changed, write it back to video buffer.
++    if (frameWasFiltered) {
++        qWarning() << "call_video_filters(): filters have changed a frame!";
++        qWarning() << "  But we don't support changing video frames in filter now.";
++    }
++}
++
+ 
+ class GStreamerVideoMaterialShader : public QSGMaterialShader
+ {

@@ -7,11 +7,9 @@ Subject: [PATCH] Link to multimediagsttools for qt 5.10
  src/videotexturebackend/videotexturebackend.pro | 3 ++-
  1 file changed, 2 insertions(+), 1 deletion(-)
 
-diff --git a/src/videotexturebackend/videotexturebackend.pro b/src/videotexturebackend/videotexturebackend.pro
-index 6803c26..5d2f08d 100644
 --- a/src/videotexturebackend/videotexturebackend.pro
 +++ b/src/videotexturebackend/videotexturebackend.pro
-@@ -6,6 +6,7 @@ QT += \
+@@ -6,6 +6,7 @@
          gui-private \
          quick \
          multimedia \
@@ -19,7 +17,7 @@ index 6803c26..5d2f08d 100644
          multimedia-private \
          qtmultimediaquicktools-private
  
-@@ -16,7 +17,7 @@ PKGCONFIG +=\
+@@ -16,7 +17,7 @@
          gstreamer-1.0 \
          nemo-gstreamer-interfaces-1.0
  
@@ -28,6 +26,3 @@ index 6803c26..5d2f08d 100644
  
  # It won't compile without this,
  # the issue is Xlib.h defines Bool as int but  QJsonValue.h has an enum with Bool = 0x1 --> int = 0x1 -> BOOM!
--- 
-2.16.2
-

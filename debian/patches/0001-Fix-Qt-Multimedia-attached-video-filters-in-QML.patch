@@ -1,0 +1,774 @@
+From edd4efe93402ba3071372f801d0ca60246117368 Mon Sep 17 00:00:00 2001
+From: Alexey Min <alexey.min@gmail.com>
+Date: Fri, 23 Feb 2018 02:08:54 +0300
+Subject: [PATCH 1/2] Fix Qt Multimedia attached video filters in QML
+
+Fix Qt Multimedia declarative video backend plugin not applying
+attached video filters:
+
+- Add overrides for QDeclarativeVideoBackend::appendFilter(),
+  clearFilters() to keep track of attached filters locally
+- Add TextureVideoBuffer class
+- Use TextureVideoBuffer to implement rendering video frame to
+  offscreen framebuffer object
+- Use glReadPixels() to get current frame's pixel data
+- Call video filters chain from GStreamerVideoTexture::updateTexture()
+
+With this fix video filters are read-only, and can be used to analyze
+incoming video stream in real time. Ideally filters should be able to
+modify every frame's pixels, but rendering modified video frame back to
+texture is not implemented now.
+
+Signed-off-by: Alexey Minnekhanov <a.minnekhanov@omprussia.ru>
+Reviewed-by: Alexander Akulich <a.akulich@omprussia.ru>
+---
+ .../texturevideobuffer.cpp                    | 284 ++++++++++++++++++
+ src/videotexturebackend/texturevideobuffer.h  |  94 ++++++
+ .../videotexturebackend.cpp                   | 222 ++++++++++++--
+ .../videotexturebackend.pro                   |   5 +
+ 4 files changed, 578 insertions(+), 27 deletions(-)
+ create mode 100644 src/videotexturebackend/texturevideobuffer.cpp
+ create mode 100644 src/videotexturebackend/texturevideobuffer.h
+
+--- /dev/null
++++ b/src/videotexturebackend/texturevideobuffer.cpp
+@@ -0,0 +1,284 @@
++/*
++ * Copyright (C) 2018 Open Mobile Platform LLC
++ * Contact: Alexey Minnekhanov <a.minnekhanov@omprussia.ru>
++ *
++ * You may use this file under the terms of the BSD license as follows:
++ *
++ * "Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *   * Redistributions of source code must retain the above copyright
++ *     notice, this list of conditions and the following disclaimer.
++ *   * Redistributions in binary form must reproduce the above copyright
++ *     notice, this list of conditions and the following disclaimer in
++ *     the documentation and/or other materials provided with the
++ *     distribution.
++ *   * Neither the name of Nemo Mobile nor the names of its contributors
++ *     may be used to endorse or promote products derived from this
++ *     software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
++ */
++
++#include <QOpenGLContext>
++#include <QOpenGLFunctions>
++#include <QOpenGLFramebufferObject>
++#include <QOpenGLShaderProgram>
++
++#include "texturevideobuffer.h"
++
++static const char *c_vertexShaderCode =
++        "attribute highp vec4 vertexCoordsArray; \n" \
++        "attribute highp vec2 textureCoordArray; \n" \
++        "uniform   highp mat4 texMatrix; \n" \
++        "varying   highp vec2 textureCoords; \n" \
++        "void main(void) \n" \
++        "{ \n" \
++        "    gl_Position = vertexCoordsArray; \n" \
++        "    textureCoords = (texMatrix * vec4(textureCoordArray, 0.0, 1.0)).xy; \n" \
++        "}\n";
++
++static const char *c_fragmentShaderCode =
++        "#extension GL_OES_EGL_image_external : require \n" \
++        "varying highp vec2         textureCoords; \n" \
++        "uniform samplerExternalOES frameTexture; \n" \
++        "void main() \n" \
++        "{ \n" \
++        "    gl_FragColor = texture2D(frameTexture, textureCoords); \n" \
++        "}\n";
++
++TextureVideoBuffer::TextureVideoBuffer():
++    QAbstractVideoBuffer(QAbstractVideoBuffer::GLTextureHandle)
++{
++}
++
++TextureVideoBuffer::~TextureVideoBuffer()
++{
++    deleteGLResources();
++}
++
++void TextureVideoBuffer::release()
++{
++    // Quote from: [qtmultimedia.git/src/multimedia/video/qabstractvideobuffer.cpp]
++    // QVideoFrame calls QAbstractVideoBuffer::release when the buffer is not used
++    // any more and can be destroyed or returned to the buffer pool.
++    // The default implementation deletes the buffer instance.
++    //
++    // Qt sources do:
++    //     delete this;
++    // We do not want to shoot ourselves. Do nothing
++}
++
++QAbstractVideoBuffer::MapMode TextureVideoBuffer::mapMode() const
++{
++    return m_mapMode;
++}
++
++uchar *TextureVideoBuffer::map(MapMode mode, int *numBytes, int *bytesPerLine)
++{
++    if (m_mapMode == NotMapped && mode == ReadOnly) {
++        updateFrame();
++        m_mapMode = mode;
++        // call toImage() only if image was not created yet by call
++        //     TextureVideoBuffer::toImage(), for example
++        if (m_image.isNull())
++            m_image = m_fbo->toImage();
++
++        if (numBytes)
++            *numBytes = m_image.byteCount();
++
++        if (bytesPerLine)
++            *bytesPerLine = m_image.bytesPerLine();
++
++        //qWarning() << "TextureVideoBuffer::map(): created internal QImage, \n"
++        //              "    byteCount: " << m_image.byteCount() << "\n"
++        //              "    bytesPerLine: " << m_image.bytesPerLine() << "\n"
++        //              "    metrics: " << m_image.width() << " x " <<
++        //              m_image.height() << " @ " << m_image.depth() << " BPP\n"
++        //              "    format: " << m_image.format();
++
++        return m_image.bits();
++    }
++    return nullptr;
++}
++
++void TextureVideoBuffer::unmap()
++{
++    m_image = QImage();
++    m_mapMode = NotMapped;
++}
++
++QVariant TextureVideoBuffer::handle() const
++{
++    return m_textureId;
++}
++
++void TextureVideoBuffer::setTextureSize(const QSize &size)
++{
++    m_size = size;
++}
++
++void TextureVideoBuffer::setTextureId(GLuint textureId)
++{
++    m_textureId = textureId;
++    m_textureUpdated = false;
++}
++
++/**
++ * @brief TextureVideoBuffer::toImage
++ * Better to call this after updateFrame() was called
++ * @return internal image, if rendered. Null image otherwise
++ */
++QImage TextureVideoBuffer::toImage() const
++{
++    if (m_textureUpdated) {
++        m_image = m_fbo->toImage();
++    }
++    return m_image;
++}
++
++void TextureVideoBuffer::updateFrame()
++{
++    if (!m_textureUpdated) {
++        // update the video texture (called from the render thread)
++        renderFrameToFbo();
++        m_textureUpdated = true;
++    }
++}
++
++void TextureVideoBuffer::createGLResources()
++{
++    // check opengl context: Returns the last context which called
++    //  makeCurrent in the current thread, or 0, if no context is current.
++    QOpenGLContext *context = QOpenGLContext::currentContext();
++    if (!context) {
++        qWarning() << Q_FUNC_INFO << " There is no current OpenGL context!";
++        qWarning() << Q_FUNC_INFO << " This should be called from QML render thread!";
++        return;
++    }
++
++    // Delete FBO if the texture size changed (to recreate it later on)
++    if (m_fbo && (m_fbo->size() != m_size)) {
++        delete m_fbo;
++        m_fbo = nullptr;
++    }
++
++    // create framebuffer object if not exists
++    if (!m_fbo) {
++        m_fbo = new QOpenGLFramebufferObject(m_size);
++        QObject::connect(context, &QOpenGLContext::aboutToBeDestroyed,
++                         this, &TextureVideoBuffer::deleteGLResources,
++                         Qt::UniqueConnection);
++    }
++
++    // init shader programs only once
++    if (m_program) {
++        return;
++    }
++    m_program = new QOpenGLShaderProgram();
++
++    QOpenGLShader *vertexShader = new QOpenGLShader(QOpenGLShader::Vertex, m_program);
++    vertexShader->compileSourceCode(c_vertexShaderCode);
++    m_program->addShader(vertexShader);
++
++    QOpenGLShader *fragmentShader = new QOpenGLShader(QOpenGLShader::Fragment, m_program);
++    fragmentShader->compileSourceCode(c_fragmentShaderCode);
++    m_program->addShader(fragmentShader);
++
++    m_program->bindAttributeLocation("vertexCoordsArray", 0);
++    m_program->bindAttributeLocation("textureCoordArray", 1);
++    m_program->link();
++}
++
++void TextureVideoBuffer::deleteGLResources()
++{
++    // This should be called in owning GStreamerVideoTexture::releaseTexture()
++    //  which is called in slot conected to QQuickWindow::afterRendering(),
++    //  so rendering should be complete and it is safe to delete resources
++    if (m_mapMode != NotMapped) {
++        unmap();
++    }
++    // delete framefuffer object
++    delete m_fbo;
++    m_fbo = nullptr;
++    // delete shader program
++    delete m_program;
++    m_program = nullptr;
++}
++
++void TextureVideoBuffer::renderFrameToFbo()
++{
++    QMutexLocker locker(&m_mutex);
++
++    if (!m_size.isValid()) {
++        return;
++    }
++
++    createGLResources();
++
++    glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_textureId);
++
++    // save current render states
++    GLboolean stencilTestEnabled;
++    GLboolean depthTestEnabled;
++    GLboolean scissorTestEnabled;
++    GLboolean blendEnabled;
++    glGetBooleanv(GL_STENCIL_TEST, &stencilTestEnabled);
++    glGetBooleanv(GL_DEPTH_TEST, &depthTestEnabled);
++    glGetBooleanv(GL_SCISSOR_TEST, &scissorTestEnabled);
++    glGetBooleanv(GL_BLEND, &blendEnabled);
++
++    if (stencilTestEnabled) glDisable(GL_STENCIL_TEST);
++    if (depthTestEnabled) glDisable(GL_DEPTH_TEST);
++    if (scissorTestEnabled) glDisable(GL_SCISSOR_TEST);
++    if (blendEnabled) glDisable(GL_BLEND);
++
++    m_fbo->bind();
++
++    glViewport(0, 0, m_size.width(), m_size.height());
++
++    m_program->bind();
++    m_program->enableAttributeArray(0);
++    m_program->enableAttributeArray(1);
++    m_program->setUniformValue("frameTexture", GLuint(0));
++    m_program->setUniformValue("texMatrix", QMatrix4x4());
++
++    static const GLfloat g_vertex_data[] = {
++        -1.0f, 1.0f,  1.0f, 1.0f,
++        1.0f, -1.0f,  -1.0f, -1.0f
++    };
++    static const GLfloat g_texture_data[] = {
++        0.0f, 0.0f,  1.0f, 0.0f,
++        1.0f, 1.0f,  0.0f, 1.0f
++    };
++
++    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, g_vertex_data);
++    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, g_texture_data);
++
++    // draw primitive
++    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
++
++    m_program->disableAttributeArray(0);
++    m_program->disableAttributeArray(1);
++
++    glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
++    // Switch rendering back to the default, windowing
++    //   system provided framebuffer.
++    m_fbo->release();
++
++    // restore render states
++    if (stencilTestEnabled) glEnable(GL_STENCIL_TEST);
++    if (depthTestEnabled) glEnable(GL_DEPTH_TEST);
++    if (scissorTestEnabled) glEnable(GL_SCISSOR_TEST);
++    if (blendEnabled) glEnable(GL_BLEND);
++}
+--- /dev/null
++++ b/src/videotexturebackend/texturevideobuffer.h
+@@ -0,0 +1,94 @@
++/*
++ * Copyright (C) 2018 Open Mobile Platform LLC
++ * Contact: Alexey Minnekhanov <a.minnekhanov@omprussia.ru>
++ *
++ * You may use this file under the terms of the BSD license as follows:
++ *
++ * "Redistribution and use in source and binary forms, with or without
++ * modification, are permitted provided that the following conditions are
++ * met:
++ *   * Redistributions of source code must retain the above copyright
++ *     notice, this list of conditions and the following disclaimer.
++ *   * Redistributions in binary form must reproduce the above copyright
++ *     notice, this list of conditions and the following disclaimer in
++ *     the documentation and/or other materials provided with the
++ *     distribution.
++ *   * Neither the name of Nemo Mobile nor the names of its contributors
++ *     may be used to endorse or promote products derived from this
++ *     software without specific prior written permission.
++ *
++ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
++ */
++
++#ifndef H_TEXTURE_VIDEO_BUFFER
++#define H_TEXTURE_VIDEO_BUFFER
++
++#include <QtGlobal>
++#include <QVariant>
++#include <QImage>
++#include <QAbstractVideoBuffer>
++#include <QMutex>
++
++#include <GLES2/gl2.h>    // for GLuint
++
++QT_FORWARD_DECLARE_CLASS(QOpenGLFramebufferObject)
++QT_FORWARD_DECLARE_CLASS(QOpenGLShaderProgram)
++
++/**
++ * @brief The TextureVideoBuffer class
++ * Acts much like QMemoryVideoBuffer, storing pixels data in
++ * QImage, which is constructed from QOpenGLFrameBufferObject,
++ * where texture with textureId is rendered to. It assumes
++ * EGLImage is already bound to passed texture.
++ */
++class TextureVideoBuffer: public QObject, public QAbstractVideoBuffer
++{
++    Q_OBJECT
++public:
++    explicit TextureVideoBuffer();
++    virtual ~TextureVideoBuffer();
++
++    void release() override;
++    MapMode mapMode() const override;
++    uchar *map(MapMode mode, int *numBytes, int *bytesPerLine) override;
++    void unmap() override;
++    QVariant handle() const override;
++
++    void setTextureSize(const QSize &size);
++    void setTextureId(GLuint textureId);
++
++public:
++    QImage toImage() const;
++
++public Q_SLOTS:
++    void updateFrame();
++
++private Q_SLOTS:
++    void createGLResources();
++    void deleteGLResources();
++    void renderFrameToFbo();
++
++private:
++    bool     m_textureUpdated = false;
++    MapMode  m_mapMode = QAbstractVideoBuffer::NotMapped;
++    GLuint   m_textureId = 0;
++
++    QOpenGLFramebufferObject *m_fbo = nullptr;
++    QOpenGLShaderProgram *m_program = nullptr;
++
++    mutable QImage m_image;
++    QSize    m_size;
++    QMutex   m_mutex;
++};
++
++#endif
+--- a/src/videotexturebackend/videotexturebackend.cpp
++++ b/src/videotexturebackend/videotexturebackend.cpp
+@@ -1,5 +1,6 @@
+ /*
+  * Copyright (C) 2014 Jolla Ltd
++ * Copyright (C) 2018 Open Mobile Platform LLC
+  * Contact: Andrew den Exter <andrew.den.exter@jollamobile.com>
+  *
+  * You may use this file under the terms of the BSD license as follows:
+@@ -43,6 +44,9 @@
+ #include <QSGGeometryNode>
+ #include <QSGMaterial>
+ #include <QSGTexture>
++#include <QOpenGLContext>
++#include <QThread>
++#include <QRunnable>
+ 
+ #include <qpa/qplatformnativeinterface.h>
+ #include <private/qgstreamerelementcontrol_p.h>
+@@ -52,10 +56,63 @@
+ #include <gst/interfaces/nemovideotexture.h>
+ #include <gst/video/gstvideometa.h>
+ 
+-#include <QThread>
++#include "texturevideobuffer.h"
+ 
+ #define EGL_SYNC_FENCE_KHR                      0x30F9
+ 
++struct FilterInfo {
++    FilterInfo() { }   // QVector requires default constructor to be present
++    FilterInfo(QAbstractVideoFilter *f) : filter(f) { }
++    QAbstractVideoFilter *filter = nullptr;
++    QVideoFilterRunnable *runnable = nullptr;
++};
++
++static void call_video_filters(QVector<FilterInfo> *filters,
++                               TextureVideoBuffer *videoBuffer,
++                               const QSize &frameSize)
++{
++    // create video frame and its format descriptor: construct
++    //   video frame from video buffer
++    QVideoFrame vframe(videoBuffer, frameSize, QVideoFrame::Format_BGRA32);
++    QVideoSurfaceFormat surfaceFormat(frameSize, vframe.pixelFormat(),
++                                      videoBuffer->handleType());
++
++    bool frameWasFiltered = false;
++    // pass frame to each filter
++    for (int i = 0; i < filters->size(); ++i) {
++        FilterInfo &finfo = (*filters)[i];
++        if (!finfo.filter) {
++            continue;
++        }
++        if (!finfo.runnable) {
++            finfo.runnable = finfo.filter->createFilterRunnable();
++        }
++        if (!finfo.runnable) {
++            continue;
++        }
++
++        QVideoFilterRunnable::RunFlags runFlag = 0;
++        // the only flag we can set for runnable is a marker
++        //    that this filter is a last filter in chain
++        if (i == filters->size() - 1) {
++            runFlag |= QVideoFilterRunnable::LastInChain;
++        }
++
++        // actually call filter runnable here
++        QVideoFrame newFrame = finfo.runnable->run(&vframe, surfaceFormat, runFlag);
++        if (newFrame != vframe) {
++            frameWasFiltered = true;
++            vframe = newFrame;
++        }
++    }
++
++    // TODO: if frame data has changed, write it back to video buffer.
++    if (frameWasFiltered) {
++        qWarning() << "call_video_filters(): filters have changed a frame!";
++        qWarning() << "  But we don't support changing video frames in filter now.";
++    }
++}
++
+ class GStreamerVideoTexture : public QSGDynamicTexture
+ {
+     Q_OBJECT
+@@ -79,6 +136,8 @@
+     void invalidateTexture();
+     void invalidated();
+ 
++    QVector<FilterInfo> swapVideoFilters(QVector<FilterInfo> &filters);
++
+ public slots:
+     void releaseTexture();
+ 
+@@ -89,6 +148,11 @@
+     QSize m_textureSize;
+     GLuint m_textureId;
+     bool m_updated;
++
++    // to get pixels from each video frame
++    TextureVideoBuffer *m_videoBuffer;
++    QVector<FilterInfo> m_filters;
++    mutable QMutex m_filtersMutex;
+ };
+ 
+ class GStreamerVideoMaterial : public QSGMaterial
+@@ -129,6 +193,7 @@
+     , m_subRect(0, 0, 1, 1)
+     , m_textureId(0)
+     , m_updated(false)
++    , m_videoBuffer(nullptr)
+ {
+     gst_object_ref(GST_OBJECT(m_sink));
+ }
+@@ -137,6 +202,10 @@
+ {
+     releaseTexture();
+ 
++    // delete TextureVideoBuffer object only in destructor
++    delete m_videoBuffer;
++    m_videoBuffer = nullptr;
++
+     if (m_textureId) {
+         glDeleteTextures(1, &m_textureId);
+     }
+@@ -239,21 +308,42 @@
+         }
+         nemo_gst_video_texture_release_frame(sink, NULL);
+         return false;
++    }
++
++    if (!m_textureId) {
++        glGenTextures(1, &m_textureId);
++        glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_textureId);
++        glTexParameterf(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++        glTexParameterf(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
++        glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++        glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+     } else {
+-        if (!m_textureId) {
+-            glGenTextures(1, &m_textureId);
+-            glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_textureId);
+-            glTexParameterf(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+-            glTexParameterf(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+-            glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+-            glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+-        } else {
+-            glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_textureId);
++        glBindTexture(GL_TEXTURE_EXTERNAL_OES, m_textureId);
++    }
++    glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, image);
++
++    // if we have video filters attached to owning VideoOutput,
++    // render video frame into a framebuffer to be able to get its pixels;
++    // if no filters, don't do this, it affects performance.
++    {
++        // hold mutex lock on m_filters vector during all processing
++        QMutexLocker guard(&m_filtersMutex);
++
++        if (!m_filters.isEmpty()) {
++            if (!m_videoBuffer) {
++                // create only once
++                m_videoBuffer = new TextureVideoBuffer();
++            }
++            // update texture size and ID for every frame
++            m_videoBuffer->setTextureSize(m_textureSize);
++            m_videoBuffer->setTextureId(m_textureId);
++            m_videoBuffer->updateFrame();
++            call_video_filters(&m_filters, m_videoBuffer, m_textureSize);
+         }
+-        glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, image);
+-        m_updated = true;
+-        return true;
+     }
++
++    m_updated = true;
++    return true;
+ }
+ 
+ void GStreamerVideoTexture::invalidateTexture()
+@@ -272,6 +362,10 @@
+     if (m_updated) {
+         m_updated = false;
+ 
++        if (m_videoBuffer) {
++            m_videoBuffer->setTextureId(0);   // invalidate texture id
++        }
++
+         NemoGstVideoTexture *sink = NEMO_GST_VIDEO_TEXTURE(m_sink);
+ 
+         nemo_gst_video_texture_unbind_frame(sink);
+@@ -300,6 +394,14 @@
+     nemo_gst_video_texture_release_frame(sink, NULL);
+ }
+ 
++QVector<FilterInfo> GStreamerVideoTexture::swapVideoFilters(QVector<FilterInfo> &filters)
++{
++    QMutexLocker guard(&m_filtersMutex);
++    m_filters.swap(filters);
++    return filters;
++}
++
++
+ class GStreamerVideoMaterialShader : public QSGMaterialShader
+ {
+ public:
+@@ -467,23 +569,29 @@
+     explicit NemoVideoTextureBackend(QDeclarativeVideoOutput *parent);
+     virtual ~NemoVideoTextureBackend();
+ 
+-    bool init(QMediaService *service);
+-    void releaseSource();
+-    void releaseControl();
+-    void itemChange(QQuickItem::ItemChange change, const QQuickItem::ItemChangeData &changeData);
+-    QSize nativeSize() const;
+-    void updateGeometry();
+-    QSGNode *updatePaintNode(QSGNode *oldNode, QQuickItem::UpdatePaintNodeData *data);
+-    QAbstractVideoSurface *videoSurface() const;
++    bool init(QMediaService *service) override;
++    void releaseSource() override;
++    void releaseControl() override;
++    void itemChange(QQuickItem::ItemChange change, const QQuickItem::ItemChangeData &changeData) override;
++    QSize nativeSize() const override;
++    void updateGeometry() override;
++    QSGNode *updatePaintNode(QSGNode *oldNode, QQuickItem::UpdatePaintNodeData *data) override;
++    QAbstractVideoSurface *videoSurface() const override;
++
++    void appendFilter(QAbstractVideoFilter *filter) override;
++    void clearFilters() override;
+ 
+     // The viewport, adjusted for the pixel aspect ratio
+-    QRectF adjustedViewport() const;
++    QRectF adjustedViewport() const override;
+ 
+-    bool event(QEvent *event);
++    bool event(QEvent *event) override;
+ 
+ signals:
+     void nativeSizeChanged();
+ 
++protected:
++    void syncFilters();
++
+ private slots:
+     void orientationChanged();
+     void sourceChanged();
+@@ -510,6 +618,10 @@
+     bool m_active;
+     bool m_geometryChanged;
+     bool m_frameChanged;
++
++    // to keep track of added video filters locally, to avoid doing
++    //   q->filters() and dealing with QQmlListProperty
++    QVector<FilterInfo> m_filters;
+ };
+ 
+ NemoVideoTextureBackend::NemoVideoTextureBackend(QDeclarativeVideoOutput *parent)
+@@ -695,11 +807,13 @@
+ 
+     if (!m_texture) {
+         m_texture = new GStreamerVideoTexture(m_sink, m_display);
+-        connect(q->window(), SIGNAL(afterRendering()),
+-                m_texture, SLOT(releaseTexture()),
++        syncFilters();
++        connect(q->window(), &QQuickWindow::afterRendering,
++                m_texture, &GStreamerVideoTexture::releaseTexture,
++                Qt::DirectConnection);
++        connect(q->window(), &QQuickWindow::sceneGraphInvalidated,
++                m_texture, &GStreamerVideoTexture::invalidated,
+                 Qt::DirectConnection);
+-        connect(q->window(), &QQuickWindow::sceneGraphInvalidated, m_texture,
+-                &GStreamerVideoTexture::invalidated, Qt::DirectConnection);
+     }
+     m_texture->setTextureSize(m_textureSize);
+ 
+@@ -740,6 +854,60 @@
+     return 0;
+ }
+ 
++void NemoVideoTextureBackend::appendFilter(QAbstractVideoFilter *filter)
++{
++    m_filters += FilterInfo(filter);
++    syncFilters();
++}
++
++void NemoVideoTextureBackend::clearFilters()
++{
++    m_filters.clear();
++    syncFilters();
++}
++
++class FilterDeleterRunnable: public QRunnable
++{
++public:
++    FilterDeleterRunnable(const QList<QVideoFilterRunnable *> &runnables):
++        m_runnables(runnables) { }
++
++    virtual void run() override {
++        qDeleteAll(m_runnables);
++        m_runnables.clear();
++    }
++
++private:
++    QList<QVideoFilterRunnable *> m_runnables;
++};
++
++void NemoVideoTextureBackend::syncFilters()
++{
++    // This function may be called very early, during contruction of
++    // QQuickItem representing VideoOutput (QDeclarativeVideoOutput),
++    // and texture is created later, on first call to updatePaintNode(),
++    // so we may not have a texture here yet to notify about having filters.
++    // P.S. syncFilters() is called again in updatePaintNode() once, after
++    //      the texture is created.
++    if (m_texture) {
++        const QVector<FilterInfo> oldFilters = m_texture->swapVideoFilters(m_filters);
++        QList<QVideoFilterRunnable*> runnables;
++        for (const FilterInfo &oldFilter : oldFilters) {
++            if (oldFilter.runnable) {
++                runnables.append(oldFilter.runnable);
++            }
++        }
++        if (!runnables.isEmpty()) {
++            // Request the scenegraph to run our cleanup job on the render thread.
++            // The execution of our QRunnable may happen after the QML tree
++            // including the QAbstractVideoFilter instance is destroyed on the
++            // main thread so no references to it must be used during cleanup.
++            q->window()->scheduleRenderJob(new FilterDeleterRunnable(runnables),
++                                           QQuickWindow::BeforeSynchronizingStage);
++        }
++    }
++}
++
+ // The viewport, adjusted for the pixel aspect ratio
+ QRectF NemoVideoTextureBackend::adjustedViewport() const
+ {
+--- a/src/videotexturebackend/videotexturebackend.pro
++++ b/src/videotexturebackend/videotexturebackend.pro
+@@ -3,6 +3,7 @@
+ TARGET = $$qtLibraryTarget($$TARGET)
+ 
+ QT += \
++        gui \
+         gui-private \
+         quick \
+         multimedia \
+@@ -24,8 +25,12 @@
+ DEFINES += MESA_EGL_NO_X11_HEADERS
+ 
+ SOURCES += \
++        texturevideobuffer.cpp \
+         videotexturebackend.cpp
+ 
++HEADERS += \
++        texturevideobuffer.h
++
+ target.path = $$[QT_INSTALL_PLUGINS]/video/declarativevideobackend
+ 
+ INSTALLS += target
