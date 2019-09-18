@@ -1,8 +1,10 @@
-nemo-qtmultimedia-plugins (0.0.11-1~ubports16.04.1) UNRELEASED; urgency=medium
+nemo-qtmultimedia-plugins (0.0.11-1~ubports16.04.1) xenial; urgency=medium
 
-  * 
+  * Import to UBports
+  * Drop debian/patches/0001-Link-to-multimediagsttools-for-qt-5.10.patch.
+    UBports 16.04 still uses Qt 5.9. So, this is no use to us.
 
- -- Ratchanan Srirattanamet <peathot@hotmail.com>  Tue, 17 Sep 2019 23:51:11 +0700
+ -- Ratchanan Srirattanamet <peathot@hotmail.com>  Wed, 18 Sep 2019 23:58:41 +0700
 
 nemo-qtmultimedia-plugins (0.0.11-1) unstable; urgency=medium
 
