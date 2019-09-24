@@ -1,3 +1,9 @@
+nemo-qtmultimedia-plugins (0.0.11-1~ubports16.04.1+rebuild1) xenial; urgency=medium
+
+  * No-change rebuild after build failure due to CI problem.
+
+ -- Ratchanan Srirattanamet <peathot@hotmail.com>  Tue, 24 Sep 2019 22:22:13 +0700
+
 nemo-qtmultimedia-plugins (0.0.11-1~ubports16.04.1) xenial; urgency=medium
 
   * Import to UBports
