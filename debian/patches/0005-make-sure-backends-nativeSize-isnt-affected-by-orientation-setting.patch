@@ -1,0 +1,46 @@
+From: Ratchanan Srirattanamet <ratchanan@ubports.com>
+Date: Wed, 9 Oct 2019 00:06:05 +0700
+Subject: [nemo-qtmultimedia-plugins] make sure backend's nativeSize isn't
+ affected by orientation settings
+
+QML VideoOutput expects backend's nativeSize to be unaffected by
+orientation settings. This causes VideoOutput's contentRect and the
+calculation of normalized point to be incorrect. This commit make
+m_nativeSize be affected by texture orientation only and make
+updatePaintNode() aware of this fact.
+
+Forwarded: https://git.sailfishos.org/mer-core/nemo-qtmultimedia-plugins/merge_requests/6
+Last-Update: 2019-10-10
+--- a/src/videotexturebackend/videotexturebackend.cpp
++++ b/src/videotexturebackend/videotexturebackend.cpp
+@@ -845,7 +845,12 @@
+     if (m_geometryChanged) {
+         const QRectF br = q->boundingRect();
+ 
+-        QRectF rect(QPointF(0, 0), QSizeF(m_nativeSize).scaled(br.size(), Qt::KeepAspectRatio));
++        QSizeF size(m_nativeSize);
++        if ((m_orientation % 180) != 0)
++            size.transpose();
++        size.scale(br.size(), Qt::KeepAspectRatio);
++
++        QRectF rect(QPointF(0, 0), size);
+         rect.moveCenter(br.center());
+ 
+         int orientation = (m_orientation - m_textureOrientation) % 360;
+@@ -944,12 +949,14 @@
+     if (event->type() == QEvent::Resize) {
+         m_nativeSize = static_cast<QResizeEvent *>(event)->size();
+         if (m_nativeSize.isValid()) {
++            QSize itemImplicitSize = m_nativeSize;
++
+             if ((m_orientation % 180) != 0) {
+-                m_nativeSize.transpose();
++                itemImplicitSize.transpose();
+             }
+ 
+             static_cast<ImplicitSizeVideoOutput *>(q)->setImplicitSize(
+-                        m_nativeSize.width(), m_nativeSize.height());
++                        itemImplicitSize.width(), itemImplicitSize.height());
+         }
+         q->update();
+         emit nativeSizeChanged();

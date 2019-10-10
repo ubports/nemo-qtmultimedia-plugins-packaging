@@ -1,3 +1,6 @@
 0001-Fix-Qt-Multimedia-attached-video-filters-in-QML.patch
 0002-Try-to-call-video-filters-without-holding-mutex.patch
 0003-texturevideobuffer-Add-missing-include.patch
+0004-make-sure-orientation-set-before-init-is-respected.patch
+0005-make-sure-backends-nativeSize-isnt-affected-by-orientation-setting.patch
+0006-correct-the-meaning-of-adjustedViewport.patch

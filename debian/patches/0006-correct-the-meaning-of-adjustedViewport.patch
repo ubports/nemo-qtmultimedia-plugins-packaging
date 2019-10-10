@@ -1,0 +1,50 @@
+From: Ratchanan Srirattanamet <ratchanan@ubports.com>
+Date: Wed, 9 Oct 2019 00:39:43 +0700
+Subject: [nemo-qtmultimedia-plugins] correct the meaning of adjustedViewport()
+
+adjustedViewport() is used in QML VideoOutput's sourceRect property. The
+document said:
+
+  This property holds the area of the source video content that is
+  considered for rendering.
+
+That is, boundingRect() have nothing to do with this value. Instead,
+it's related to video croping and such.
+
+It seems like this backend supported croping, but I can't figure out how
+to bring that information to this function. Also, VideoOutput also
+expects the size of the viewport to be equal to nativeSize. So, what I
+can do is writing a stub that returns the entire video as the viewport
+and then leave a TODO so that someone more knowledgable than me can
+deal with it.
+
+Forwarded: https://git.sailfishos.org/mer-core/nemo-qtmultimedia-plugins/merge_requests/6
+Last-Update: 2019-10-10
+--- a/src/videotexturebackend/videotexturebackend.cpp
++++ b/src/videotexturebackend/videotexturebackend.cpp
+@@ -599,7 +599,7 @@
+     void appendFilter(QAbstractVideoFilter *filter) override;
+     void clearFilters() override;
+ 
+-    // The viewport, adjusted for the pixel aspect ratio
++    // The viewport in the video, adjusted for the pixel aspect ratio
+     QRectF adjustedViewport() const override;
+ 
+     bool event(QEvent *event) override;
+@@ -933,13 +933,11 @@
+     }
+ }
+ 
+-// The viewport, adjusted for the pixel aspect ratio
++// The viewport of the video, adjusted for the pixel aspect ratio
+ QRectF NemoVideoTextureBackend::adjustedViewport() const
+ {
+-    const QRectF br = q->boundingRect();
+-
+-    QRectF rect(QPointF(0, 0), QSizeF(m_nativeSize).scaled(br.size(), Qt::KeepAspectRatio));
+-    rect.moveCenter(br.center());
++    // TODO: account for cropping. Will also have to fix m_nativeSize.
++    QRectF rect(QPointF(0, 0), QSizeF(m_nativeSize));
+ 
+     return rect;
+ }

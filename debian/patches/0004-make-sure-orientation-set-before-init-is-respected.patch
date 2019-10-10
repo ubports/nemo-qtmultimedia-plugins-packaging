@@ -1,0 +1,22 @@
+From: Ratchanan Srirattanamet <ratchanan@ubports.com>
+Date: Tue, 8 Oct 2019 18:04:58 +0700
+Subject: [nemo-qtmultimedia-plugins] make sure orientaion set before init() is
+ applied
+
+User may set the VideoOutput's orientation before it initialise its
+backend. To make sure we take that into account, we copy the orientation
+from the parent to m_orientation in init() function.
+
+Forwarded: https://git.sailfishos.org/mer-core/nemo-qtmultimedia-plugins/merge_requests/5
+Last-Update: 2019-10-10
+--- a/src/videotexturebackend/videotexturebackend.cpp
++++ b/src/videotexturebackend/videotexturebackend.cpp
+@@ -778,6 +778,8 @@
+     m_service = service;
+     m_control->setElement(m_sink);
+ 
++    m_orientation = q->orientation();
++
+     connect(this, SIGNAL(nativeSizeChanged()), q, SLOT(_q_updateNativeSize()));
+     connect(q, SIGNAL(orientationChanged()), this, SLOT(orientationChanged()));
+     connect(q, SIGNAL(sourceChanged()), this, SLOT(sourceChanged()));
