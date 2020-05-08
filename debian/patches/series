@@ -1,4 +1,1 @@
 0001-Link-to-multimediagsttools-for-qt-5.10.patch
-0001-Fix-Qt-Multimedia-attached-video-filters-in-QML.patch
-0002-Try-to-call-video-filters-without-holding-mutex.patch
-0003-texturevideobuffer-Add-missing-include.patch
