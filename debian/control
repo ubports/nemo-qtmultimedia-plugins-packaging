@@ -6,7 +6,7 @@ XSBC-Original-Maintainer: Bhushan Shah <bshah@kde.org>
 Build-Depends: debhelper (>= 9),
                libasound2-dev,
                libgstreamer-plugins-base1.0-dev,
-               nemo-gstreamer1.0-interfaces-dev,
+               nemo-gstreamer1.0-interfaces-dev (>= 0.20200421.0),
                pkg-config,
                pkg-kde-tools (>= 0.9),
                qt5-qmake,
