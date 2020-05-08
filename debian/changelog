@@ -1,11 +1,17 @@
-nemo-qtmultimedia-plugins (0.1.1-1) UNRELEASED; urgency=medium
+nemo-qtmultimedia-plugins (0.1.1-1) unstable; urgency=medium
 
   * New upstream release. Changes since last update includes:
     - Make sure orientation is set before init() is applied.
     - videotexturebackend: call attached QML video filters.
     - Use persistent bindings of graphics buffers to texture ids.
+  * d/control: add a version requirement to nemo-gst-interfaces.
+    This is due to API changes required by the new version.
+  * Remove patches applied upstream/not needed
+    - 0001-Fix-Qt-Multimedia-attached-video-filters-in-QML.patch
+    - 0002-Try-to-call-video-filters-without-holding-mutex.patch
+    - 0003-texturevideobuffer-Add-missing-include.patch
 
- -- Ratchanan Srirattanamet <ratchanan@ubports.com>  Fri, 08 May 2020 16:50:57 +0700
+ -- Ratchanan Srirattanamet <ratchanan@ubports.com>  Fri, 08 May 2020 19:39:38 +0700
 
 nemo-qtmultimedia-plugins (0.0.11-1) unstable; urgency=medium
 
