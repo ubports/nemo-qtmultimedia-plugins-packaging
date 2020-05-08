@@ -20,18 +20,11 @@ deal with it.
 
 Forwarded: https://git.sailfishos.org/mer-core/nemo-qtmultimedia-plugins/merge_requests/6
 Last-Update: 2019-10-10
+diff --git a/src/videotexturebackend/videotexturebackend.cpp b/src/videotexturebackend/videotexturebackend.cpp
+index 0dd0fcf..b7becea 100644
 --- a/src/videotexturebackend/videotexturebackend.cpp
 +++ b/src/videotexturebackend/videotexturebackend.cpp
-@@ -599,7 +599,7 @@
-     void appendFilter(QAbstractVideoFilter *filter) override;
-     void clearFilters() override;
- 
--    // The viewport, adjusted for the pixel aspect ratio
-+    // The viewport in the video, adjusted for the pixel aspect ratio
-     QRectF adjustedViewport() const override;
- 
-     bool event(QEvent *event) override;
-@@ -933,13 +933,11 @@
+@@ -784,13 +784,11 @@ void NemoVideoTextureBackend::clearFilters()
      }
  }
  
@@ -48,3 +41,19 @@ Last-Update: 2019-10-10
  
      return rect;
  }
+diff --git a/src/videotexturebackend/videotexturebackend.h b/src/videotexturebackend/videotexturebackend.h
+index e5e7630..fbfb404 100644
+--- a/src/videotexturebackend/videotexturebackend.h
++++ b/src/videotexturebackend/videotexturebackend.h
+@@ -180,7 +180,7 @@ public:
+     void appendFilter(QAbstractVideoFilter *filter) override;
+     void clearFilters() override;
+ 
+-    // The viewport, adjusted for the pixel aspect ratio
++    // The viewport in the video, adjusted for the pixel aspect ratio
+     QRectF adjustedViewport() const override;
+ 
+     bool event(QEvent *event) override;
+-- 
+2.17.1
+

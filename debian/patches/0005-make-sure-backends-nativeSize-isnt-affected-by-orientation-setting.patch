@@ -11,9 +11,11 @@ updatePaintNode() aware of this fact.
 
 Forwarded: https://git.sailfishos.org/mer-core/nemo-qtmultimedia-plugins/merge_requests/6
 Last-Update: 2019-10-10
+diff --git a/src/videotexturebackend/videotexturebackend.cpp b/src/videotexturebackend/videotexturebackend.cpp
+index 9f61de3..0dd0fcf 100644
 --- a/src/videotexturebackend/videotexturebackend.cpp
 +++ b/src/videotexturebackend/videotexturebackend.cpp
-@@ -845,7 +845,12 @@
+@@ -717,7 +717,12 @@ QSGNode *NemoVideoTextureBackend::updatePaintNode(QSGNode *oldNode, QQuickItem::
      if (m_geometryChanged) {
          const QRectF br = q->boundingRect();
  
@@ -27,20 +29,27 @@ Last-Update: 2019-10-10
          rect.moveCenter(br.center());
  
          int orientation = (m_orientation - m_textureOrientation) % 360;
-@@ -944,12 +949,14 @@
-     if (event->type() == QEvent::Resize) {
-         m_nativeSize = static_cast<QResizeEvent *>(event)->size();
-         if (m_nativeSize.isValid()) {
-+            QSize itemImplicitSize = m_nativeSize;
+@@ -798,12 +803,16 @@ bool NemoVideoTextureBackend::event(QEvent *event)
+             {
+                 QMutexLocker locker(&m_mutex);
+                 m_nativeSize = nativeSize;
+-                if ((m_orientation % 180) != 0) {
+-                    m_nativeSize.transpose();
+-                }
++            }
 +
-             if ((m_orientation % 180) != 0) {
--                m_nativeSize.transpose();
++            // FIXME: isn't this done by QDeclarativeVideoOutput already?
++            // https://github.com/qt/qtmultimedia/blob/7f5d08636ca9278e4a018db39b701457ea1e7115/src/qtmultimediaquicktools/qdeclarativevideooutput.cpp#L372
++            QSize itemImplicitSize = nativeSize;
++            if ((m_orientation % 180) != 0) {
 +                itemImplicitSize.transpose();
              }
- 
              static_cast<ImplicitSizeVideoOutput *>(q)->setImplicitSize(
--                        m_nativeSize.width(), m_nativeSize.height());
+-                        nativeSize.width(), nativeSize.height());
 +                        itemImplicitSize.width(), itemImplicitSize.height());
          }
          q->update();
          emit nativeSizeChanged();
+-- 
+2.17.1
+
