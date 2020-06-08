@@ -1,2 +1,3 @@
+0003-texturevideobuffer-Add-missing-include.patch
 0005-make-sure-backends-nativeSize-isnt-affected-by-orientation-setting.patch
 0006-correct-the-meaning-of-adjustedViewport.patch

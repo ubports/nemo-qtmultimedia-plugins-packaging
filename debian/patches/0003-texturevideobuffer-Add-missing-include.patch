@@ -1,0 +1,19 @@
+From 0d8a0ad1dd45c0137df5ff6a5a3ea22fcaf06fb8 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jonah=20Br=C3=BCchert?= <jbb.prv@gmx.de>
+Date: Fri, 19 Jul 2019 18:18:59 +0200
+Subject: [PATCH 3/3] texturevideobuffer: Add missing include
+
+---
+ src/videotexturebackend/texturevideobuffer.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+--- a/src/videotexturebackend/texturevideobuffer.h
++++ b/src/videotexturebackend/texturevideobuffer.h
+@@ -42,6 +42,7 @@
+ #include <memory>
+ 
+ #include <GLES2/gl2.h>    // for GLuint
++#include <GLES2/gl2ext.h>
+ 
+ QT_FORWARD_DECLARE_CLASS(QOpenGLFramebufferObject)
+ QT_FORWARD_DECLARE_CLASS(QOpenGLShaderProgram)
