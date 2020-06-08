@@ -1,7 +1,9 @@
-nemo-qtmultimedia-plugins (0.1.1-2) UNRELEASED; urgency=medium
+nemo-qtmultimedia-plugins (0.1.1-2) unstable; urgency=medium
 
+  * Bring one of dropped patches back to fix build on amd64
+    - 0003-texturevideobuffer-Add-missing-include.patch
 
- -- Ratchanan Srirattanamet <ratchanan@ubports.com>  Tue, 09 Jun 2020 01:57:25 +0700
+ -- Ratchanan Srirattanamet <ratchanan@ubports.com>  Tue, 09 Jun 2020 02:03:39 +0700
 
 nemo-qtmultimedia-plugins (0.1.1-1) unstable; urgency=medium
 
