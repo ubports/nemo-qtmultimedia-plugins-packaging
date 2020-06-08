@@ -1,8 +1,14 @@
-nemo-qtmultimedia-plugins (0.1.1-1~ubports16.04.1) UNRELEASED; urgency=medium
+nemo-qtmultimedia-plugins (0.1.1-1~ubports16.04.1) xenial; urgency=medium
 
   * Merge version 0.20200421.0-1 from Debian-PM
+  * Update source location for 0.1.1
+  * Remove applied upstream patch
+    - 0004-make-sure-orientation-set-before-init-is-respected.patch
+  * Update patches that don't apply with the newer version
+    - 0005-make-sure-backends-nativeSize-isnt-affected-by-orientation-setting.patch
+    - 0006-correct-the-meaning-of-adjustedViewport.patch
 
- -- Ratchanan Srirattanamet <ratchanan@ubports.com>  Fri, 08 May 2020 19:44:28 +0700
+ -- Ratchanan Srirattanamet <ratchanan@ubports.com>  Tue, 09 Jun 2020 00:49:55 +0700
 
 nemo-qtmultimedia-plugins (0.1.1-1) unstable; urgency=medium
 
