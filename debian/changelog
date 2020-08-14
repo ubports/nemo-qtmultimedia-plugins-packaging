@@ -1,3 +1,9 @@
+nemo-qtmultimedia-plugins (0.1.1-2~ubports16.04.2) UNRELEASED; urgency=medium
+
+  * 
+
+ -- Ratchanan Srirattanamet <ratchanan@ubports.com>  Sat, 15 Aug 2020 02:02:45 +0700
+
 nemo-qtmultimedia-plugins (0.1.1-2~ubports16.04.1) xenial; urgency=medium
 
   * Merge version 0.1.1-2 from Debian-PM to fix build failure on AMD64.
